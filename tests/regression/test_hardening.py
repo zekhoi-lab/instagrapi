@@ -1,3 +1,5 @@
+import requests
+
 from instagrapi.exceptions import DirectMessageRequestsDisabled
 from tests.helpers import *
 

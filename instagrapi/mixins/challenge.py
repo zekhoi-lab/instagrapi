@@ -143,7 +143,9 @@ class ChallengeResolveMixin:
         instagram_ajax = hashlib.sha256(ajax_seed.encode()).hexdigest()[:12]
         session = requests.Session()
         session.verify = self.tls_verify
-        session.proxies = self.private.proxies
+        # httpcloak doesn't have .proxies, get proxy URL and convert to dict
+        proxy_url = self.private.get_proxy()
+        session.proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
         session.headers.update(
             {
                 "User-Agent": "Mozilla/5.0 (Linux; Android 8.0.0; MI 5s Build/OPR1.170623.032; wv) "
@@ -166,9 +168,9 @@ class ChallengeResolveMixin:
                 "cache-control": "no-cache",
             }
         )
-        for key, value in self.private.cookies.items():
-            if key in ["mid", "csrftoken"]:
-                session.cookies.set(key, value)
+        for cookie in self.private.cookies:
+            if cookie.name in ["mid", "csrftoken"]:
+                session.cookies.set(cookie.name, cookie.value)
         time.sleep(WAIT_SECONDS)
         result = session.get(challenge_url)  # render html form
         session.headers.update(

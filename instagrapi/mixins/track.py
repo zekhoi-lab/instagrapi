@@ -2,8 +2,6 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Union
 from urllib.parse import urlparse
 
-import requests
-
 from instagrapi.exceptions import ClientError, TrackNotFound
 from instagrapi.extractors import extract_track
 from instagrapi.types import Track
@@ -46,7 +44,7 @@ class TrackMixin:
         assert fname, """The URL must contain the path to the file (m4a or mp3)."""
         filename = "%s.%s" % (filename, fname.rsplit(".", 1)[1]) if filename else fname
         path = Path(folder) / filename
-        response = requests.get(url, stream=True, timeout=self.request_timeout)
+        response = self.private.get(url, stream=True, timeout=self.request_timeout)
         response.raise_for_status()
         return self._download_response_to_path(response, path)
 

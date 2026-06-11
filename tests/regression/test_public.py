@@ -1,3 +1,5 @@
+import requests
+
 from instagrapi.exceptions import ClientForbiddenError, ClientLoginRequired, ClientNotFoundError
 from instagrapi.mixins.public import JSONDecodeError as PublicJSONDecodeError
 from tests.helpers import *

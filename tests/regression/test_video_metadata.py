@@ -202,6 +202,11 @@ class VideoMetadataRegressionTestCase(unittest.TestCase):
         self.assertIn("--no-deps", message)
 
     def test_story_builder_photo_generates_video_with_moviepy_2(self):
+        try:
+            importlib.metadata.version("moviepy")
+        except importlib.metadata.PackageNotFoundError:
+            raise unittest.SkipTest("moviepy not installed")
+
         from PIL import Image
 
         from instagrapi.story import StoryBuilder
@@ -226,6 +231,11 @@ class VideoMetadataRegressionTestCase(unittest.TestCase):
                     os.unlink(build.path)
 
     def test_prepare_video_generates_thumbnail_with_moviepy_2(self):
+        try:
+            importlib.metadata.version("moviepy")
+        except importlib.metadata.PackageNotFoundError:
+            raise unittest.SkipTest("moviepy not installed")
+
         from instagrapi.image_util import prepare_video
 
         self.assertEqual(importlib.metadata.version("moviepy"), "2.2.1")

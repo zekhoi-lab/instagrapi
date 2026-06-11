@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Union
 from uuid import uuid4
 
-import requests
+import httpcloak
 from pydantic import ValidationError
 
 from instagrapi import config
@@ -29,6 +29,8 @@ from instagrapi.exceptions import (
 from instagrapi.types import UserShort
 from instagrapi.utils.auth import gen_token, generate_jazoest
 from instagrapi.utils.serialization import dumps
+
+from instagrapi.mixins.private import get_header_value
 
 # from instagrapi.zones import CET
 TIMELINE_FEED_REASONS = (
@@ -485,9 +487,10 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
         if clear_authorization_header:
             self.private.headers.pop("Authorization", None)
         if clear_private_cookies:
-            self.private.cookies.clear()
+            self.private.clear_cookies()
         if clear_public_cookies:
-            self.public.cookies.clear()
+            self.public.clear_cookies()
+        # httpcloak: use clear_cookies() instead of cookies.clear()
 
     def _find_login_response_value(self, data: Any, key: str) -> Any:
         if isinstance(data, dict):
@@ -604,10 +607,26 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
         bool
             A boolean value
         """
-        if "cookies" in self.settings:
-            self.private.cookies = requests.utils.cookiejar_from_dict(self.settings["cookies"])
-        else:
-            self._clear_session_state(clear_private_cookies=True)
+
+        # HTTPCloak handles cookies internally via session state
+        # Try to restore from httpcloak session data if available
+        if "httpcloak_session_data" in self.settings:
+            try:
+                # Restore the private session from saved state
+                preset = self.settings.get("httpcloak_preset", "android-chrome-143")
+                restored_session = httpcloak.Session.unmarshal(
+                    self.settings["httpcloak_session_data"]
+                )
+                self.private = restored_session
+            except Exception as e:
+                self.logger.warning(f"Failed to restore httpcloak session: {e}")
+                # Fall back to creating new session
+                # Use ios-chrome-143 - Instagram blocks android-chrome TLS fingerprints
+                preset = self.settings.get("httpcloak_preset", "ios-chrome-143")
+                self.private = httpcloak.Session(
+                    preset=preset, timeout=30, tls_only=True
+                )
+
         self.authorization_data = self.settings.get("authorization_data", {})
         self.last_login = self.settings.get("last_login")
         timezone_offset = self.settings.get("timezone_offset", self.timezone_offset)
@@ -646,14 +665,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
         self.set_ig_u_rur(self.settings.get("ig_u_rur"))
         self.set_ig_www_claim(self.settings.get("ig_www_claim"))
         # init headers
-        headers = self.base_headers
-        if self.authorization:
-            headers.update({"Authorization": self.authorization})
-        else:
-            self.private.headers.pop("Authorization", None)
-        if not self.ig_u_rur:
-            self.private.headers.pop("IG-U-RUR", None)
-        self.private.headers.update(headers)
+        # Note: httpcloak manages headers internally, no need to update session headers
         return True
 
     def _user_short_from_private_stream(self, user_id: str) -> UserShort:
@@ -701,7 +713,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
                 user = self.user_short_gql(int(user_id))
         self.username = user.username
         self.authorization_data["ds_user_id"] = str(user.pk)
-        self.private.cookies.set("ds_user_id", str(user.pk))
+        self.private.set_cookie("ds_user_id", str(user.pk))
         self.private.headers.update(self.base_headers)
         self.private.headers.update({"Authorization": self.authorization})
         return True
@@ -774,7 +786,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
         }
         try:
             logged = self.private_request("accounts/login/", data, login=True)
-            self.authorization_data = self.parse_authorization(self.last_response.headers.get("ig-set-authorization"))
+            self.authorization_data = self.parse_authorization(get_header_value(self.last_response.headers, "ig-set-authorization"))
         except BadPassword as exc:
             login_json = deepcopy(self.last_json) if isinstance(self.last_json, dict) else {}
             context = self._extract_two_step_verification_context(login_json)
@@ -822,7 +834,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
                         raise
                 else:
                     self.authorization_data = self.parse_authorization(
-                        self.last_response.headers.get("ig-set-authorization")
+                        get_header_value(self.last_response.headers, "ig-set-authorization")
                     )
         if logged:
             self.login_flow()
@@ -871,7 +883,10 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
 
     @property
     def cookie_dict(self) -> dict:
-        return self.private.cookies.get_dict()
+        cookies = self.private.cookies
+        if isinstance(cookies, list):
+            return {c.name: c.value for c in cookies}
+        return cookies
 
     @property
     def sessionid(self) -> str:
@@ -919,6 +934,12 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
         Dict
             Current session settings as a Dict
         """
+        try:
+            httpcloak_session_data = self.private.marshal()
+        except Exception as e:
+            self.logger.warning(f"Failed to marshal httpcloak session: {e}")
+            httpcloak_session_data = ""
+        
         settings = {
             "uuids": {
                 "phone_id": self.phone_id,
@@ -934,7 +955,10 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
             "ig_u_rur": self.ig_u_rur,
             "ig_www_claim": self.ig_www_claim,
             "authorization_data": self.authorization_data,
-            "cookies": requests.utils.dict_from_cookiejar(self.private.cookies),
+            "httpcloak_session_data": httpcloak_session_data,  # New: save session state
+            "httpcloak_preset": getattr(
+                self, "_httpcloak_preset", "android-chrome-143"
+            ),  # Save preset
             "last_login": self.last_login,
             "device_settings": self.device_settings,
             "user_agent": self.user_agent,
@@ -1053,9 +1077,6 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
                 self.public_transport, self.public_transport_impersonate
             )
             self.public.headers["User-Agent"] = self.public_user_agent
-
-        self._configure_public_session_retry()
-        self._configure_private_session_retry()
 
         if self.settings is not None:
             self.settings.update(
@@ -1343,7 +1364,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
             A boolean value
         """
         if self.sessionid:
-            self.public.cookies.set("sessionid", self.sessionid)
+            self.public.set_cookie("sessionid", self.sessionid)
             return True
         return False
 

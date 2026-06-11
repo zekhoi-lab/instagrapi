@@ -18,10 +18,11 @@ from pathlib import Path
 from unittest import mock
 from unittest.mock import Mock
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import httpcloak
 
-import requests
+
+
 from pydantic import ValidationError
-from requests.exceptions import RetryError
 
 from instagrapi import Client
 from instagrapi.exceptions import (
@@ -235,8 +236,10 @@ def fetch_test_accounts(count=None, timeout=None):
     if timeout is not None:
         request_kwargs["timeout"] = timeout
     try:
-        resp = requests.get(test_accounts_url, **request_kwargs)
-    except requests.RequestException as exc:
+        session = httpcloak.Session(preset="safari-18", tls_only=True, verify=False)
+        resp = session.get(test_accounts_url)
+        session.close()
+    except Exception as exc:
         raise RuntimeError(f"Could not fetch TEST_ACCOUNTS_URL: {exc.__class__.__name__}") from None
     print("TEST_ACCOUNTS_URL response code: ", resp.status_code)
     if not 200 <= resp.status_code < 300:

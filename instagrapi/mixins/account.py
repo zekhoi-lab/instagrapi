@@ -29,7 +29,8 @@ class AccountMixin:
         Dict
             Jsonified response from Instagram
         """
-        csrf_token = self.public.cookies.get("csrftoken") or gen_token()
+        c = self.public.get_cookie("csrftoken")
+        csrf_token = (c.value if c else None) or gen_token()
         return self.public_request(
             "https://www.instagram.com/accounts/account_recovery_send_ajax/",
             data={"email_or_username": identifier, "recaptcha_challenge_field": recaptcha_challenge_field},

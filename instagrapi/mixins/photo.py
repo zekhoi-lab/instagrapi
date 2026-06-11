@@ -103,7 +103,7 @@ class DownloadPhotoMixin:
         path = Path(folder) / filename
         if path.exists() and not overwrite:
             return path.resolve()
-        response = requests.get(url, stream=True, timeout=self.request_timeout)
+        response = self.private.get(url, stream=True, timeout=self.request_timeout)
         response.raise_for_status()
         return self._download_response_to_path(response, path)
 
@@ -121,7 +121,8 @@ class DownloadPhotoMixin:
         bytes
         """
         url = str(url)
-        response = requests.get(url, stream=True, timeout=self.request_timeout)
+         # Use existing private session
+        response = self.private.get(url, timeout=self.request_timeout)
         response.raise_for_status()
         return self._download_response_bytes(response, url)
 

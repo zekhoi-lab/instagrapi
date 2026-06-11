@@ -687,9 +687,9 @@ class BloksMixin:
             if self.authorization:
                 self.private.headers["Authorization"] = self.authorization
         for name, value in cookies.items():
-            self.private.cookies.set(name, value)
+            self.private.set_cookie(name, value)
         if cookies.get("sessionid"):
-            self.public.cookies.set("sessionid", cookies["sessionid"])
+            self.public.set_cookie("sessionid", cookies["sessionid"])
         ig_u_rur = headers.get("ig-set-ig-u-rur") or headers.get("IG-Set-IG-U-RUR")
         if ig_u_rur:
             self.set_ig_u_rur(ig_u_rur)

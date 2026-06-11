@@ -10,9 +10,8 @@ try:
 except ImportError:
     from json.decoder import JSONDecodeError
 
-import requests
-from requests.adapters import HTTPAdapter
-from requests.packages.urllib3.util.retry import Retry
+import httpcloak
+from instagrapi.mixins.private import get_header_value
 
 from instagrapi.exceptions import (
     ClientBadRequestError,
@@ -58,68 +57,39 @@ class PublicRequestMixin:
     public_accept_language = "en-US"
 
     def __init__(self, *args, **kwargs):
-        session = requests.Session()
-        self.public = session
-        self.public.verify = getattr(self, "tls_verify", True)
-        self.public_transport = self._normalize_public_transport(
-            kwargs.pop("public_transport", getattr(self, "public_transport", self.public_transport))
+        # Get preset from kwargs
+        # Use safari-18 for public/web API - Instagram blocks Chrome TLS fingerprints
+        # iOS/Safari presets work with Instagram's API
+        preset = kwargs.pop("httpcloak_public_preset", "safari-18")
+        http_version = kwargs.pop("http_version", "auto")
+
+        # setup httpcloak session with browser fingerprinting
+        # tls_only=True allows us to set custom headers while keeping TLS fingerprint
+        self.public = httpcloak.Session(
+            preset=preset,
+            timeout=30,
+            http_version=http_version,
+            tls_only=True,
         )
-        self.public_transport_impersonate = kwargs.pop(
-            "public_transport_impersonate",
-            getattr(self, "public_transport_impersonate", self.public_transport_impersonate),
-        )
-        self.public_user_agent = kwargs.pop(
-            "public_user_agent",
-            self._default_public_user_agent(self.public_transport, self.public_transport_impersonate),
-        )
-        self.public_accept_language = kwargs.pop(
-            "public_accept_language", getattr(self, "public_accept_language", self.public_accept_language)
-        )
-        self.public.headers.update(
-            {
-                "Connection": "Keep-Alive",
-                "Accept": "*/*",
-                "Accept-Encoding": "gzip,deflate",
-                "Accept-Language": self.public_accept_language,
-                "User-Agent": self.public_user_agent,
-            }
-        )
-        self.request_timeout = kwargs.pop("request_timeout", getattr(self, "request_timeout", self.request_timeout))
-        self.public_request_retries_count = kwargs.pop(
-            "public_request_retries_count",
-            getattr(
-                self,
-                "public_request_retries_count",
-                self.public_request_retries_count,
-            ),
-        )
-        self.public_request_retries_timeout = kwargs.pop(
-            "public_request_retries_timeout",
-            getattr(
-                self,
-                "public_request_retries_timeout",
-                self.public_request_retries_timeout,
-            ),
-        )
-        self.session_retry_total = kwargs.pop(
-            "session_retry_total",
-            getattr(self, "session_retry_total", self.session_retry_total),
-        )
-        self.session_retry_backoff_factor = kwargs.pop(
-            "session_retry_backoff_factor",
-            getattr(
-                self,
-                "session_retry_backoff_factor",
-                self.session_retry_backoff_factor,
-            ),
-        )
-        self.session_retry_statuses = list(
-            kwargs.pop(
-                "session_retry_statuses",
-                getattr(self, "session_retry_statuses", self.session_retry_statuses),
-            )
-        )
-        self._configure_public_session_retry()
+
+        # Store preset for later reference
+        self._httpcloak_preset_public = preset
+
+        # Headers are automatically managed by httpcloak based on preset
+        # but we store custom ones for updates
+        self._public_custom_headers = {
+            "Connection": "Keep-Alive",
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip,deflate",
+            "Accept-Language": "en-US",
+        }
+
+        self.request_timeout = kwargs.pop("request_timeout", self.request_timeout)
+        # Consume public-session kwargs so they don't leak to parent inits
+        kwargs.pop("public_user_agent", None)
+        kwargs.pop("public_transport", None)
+        kwargs.pop("public_transport_impersonate", None)
+        # self._configure_public_session_retry()
         super().__init__(*args, **kwargs)
 
     @classmethod
@@ -135,35 +105,35 @@ class PublicRequestMixin:
             return cls.public_curl_user_agents.get(impersonate, cls.public_curl_user_agents["chrome136"])
         return cls.public_user_agent
 
-    def _build_public_session_retry_strategy(self):
-        try:
-            return Retry(
-                total=self.session_retry_total,
-                status_forcelist=self.session_retry_statuses,
-                allowed_methods=["GET", "POST"],
-                backoff_factor=self.session_retry_backoff_factor,
-            )
-        except TypeError:
-            return Retry(
-                total=self.session_retry_total,
-                status_forcelist=self.session_retry_statuses,
-                method_whitelist=["GET", "POST"],
-                backoff_factor=self.session_retry_backoff_factor,
-            )
+    # def _build_public_session_retry_strategy(self):
+    #     try:
+    #         return Retry(
+    #             total=self.session_retry_total,
+    #             status_forcelist=self.session_retry_statuses,
+    #             allowed_methods=["GET", "POST"],
+    #             backoff_factor=self.session_retry_backoff_factor,
+    #         )
+    #     except TypeError:
+    #         return Retry(
+    #             total=self.session_retry_total,
+    #             status_forcelist=self.session_retry_statuses,
+    #             method_whitelist=["GET", "POST"],
+    #             backoff_factor=self.session_retry_backoff_factor,
+    #         )
 
-    def _configure_public_session_retry(self):
-        if self.public_transport == "curl":
-            try:
-                from curl_adapter import CurlCffiAdapter
-            except ImportError as exc:
-                raise RuntimeError(
-                    "curl public transport requires the optional curl extra: pip install instagrapi[curl]"
-                ) from exc
-            adapter = CurlCffiAdapter(impersonate_browser_type=self.public_transport_impersonate)
-        else:
-            adapter = HTTPAdapter(max_retries=self._build_public_session_retry_strategy())
-        self.public.mount("https://", adapter)
-        self.public.mount("http://", adapter)
+    # def _configure_public_session_retry(self):
+    #     if self.public_transport == "curl":
+    #         try:
+    #             from curl_adapter import CurlCffiAdapter
+    #         except ImportError as exc:
+    #             raise RuntimeError(
+    #                 "curl public transport requires the optional curl extra: pip install instagrapi[curl]"
+    #             ) from exc
+    #         adapter = CurlCffiAdapter(impersonate_browser_type=self.public_transport_impersonate)
+    #     else:
+    #         adapter = HTTPAdapter(max_retries=self._build_public_session_retry_strategy())
+    #     self.public.mount("https://", adapter)
+    #     self.public.mount("http://", adapter)
 
     def public_head(self, url: str, follow_redirects: bool = False):
         """
@@ -193,7 +163,6 @@ class PublicRequestMixin:
         return self.public.head(
             url,
             allow_redirects=follow_redirects,
-            proxies=self.public.proxies,
             timeout=self.request_timeout,
         )
 
@@ -261,11 +230,13 @@ class PublicRequestMixin:
     ):
         self.public_requests_count += 1
         per_request_headers = None
+        headers_to_send = dict(self._public_custom_headers)
         if headers:
             if update_headers in [None, True]:
-                self.public.headers.update(headers)
-            elif update_headers is False:
-                per_request_headers = headers
+                headers_to_send.update(headers)
+            elif update_headers == False:
+                headers_to_send = headers
+
         if self.last_response_ts and (time.time() - self.last_response_ts) < 1.0:
             time.sleep(1.0)
         if self.request_timeout:
@@ -276,16 +247,14 @@ class PublicRequestMixin:
                     url,
                     data=data,
                     params=params,
-                    headers=per_request_headers,
-                    proxies=self.public.proxies,
+                    headers=headers_to_send,
                     timeout=timeout,
                 )
             else:  # GET
                 response = self.public.get(
                     url,
                     params=params,
-                    headers=per_request_headers,
-                    proxies=self.public.proxies,
+                    headers=headers_to_send,
                     stream=stream,
                     timeout=timeout,
                 )
@@ -293,7 +262,9 @@ class PublicRequestMixin:
             if stream:
                 return response
 
-            expected_length = int(response.headers.get("Content-Length") or 0)
+            expected_length = int(
+                get_header_value(response.headers, "Content-Length") or 0
+            )
             actual_length = response.raw.tell()
             if actual_length < expected_length:
                 raise ClientIncompleteReadError(
@@ -305,7 +276,7 @@ class PublicRequestMixin:
 
             self.public_request_logger.info(
                 "[%s] [%s] %s %s",
-                self.public.proxies.get("https"),
+                "proxy" if hasattr(self, "proxy") and self.proxy else "direct",
                 response.status_code,
                 "POST" if data else "GET",
                 response.url,
@@ -331,22 +302,31 @@ class PublicRequestMixin:
                 "JSONDecodeError {0!s} while opening {1!s}".format(e, url),
                 response=response,
             )
-        except requests.HTTPError as e:
-            if e.response.status_code == 401:
-                # HTTPError: 401 Client Error: Unauthorized for url: https://i.instagram.com/api/v1/users....
-                raise ClientUnauthorizedError(e, response=e.response)
-            elif e.response.status_code == 403:
-                raise ClientForbiddenError(e, response=e.response)
-            elif e.response.status_code == 400:
-                raise ClientBadRequestError(e, response=e.response)
-            elif e.response.status_code == 429:
-                raise ClientThrottledError(e, response=e.response)
-            elif e.response.status_code == 404:
-                raise ClientNotFoundError(e, response=e.response)
-            raise ClientError(e, response=e.response)
+        except Exception as e:
+            # Check if it's httpcloak HTTPError
+            if hasattr(e, "__class__") and "HTTPError" in e.__class__.__name__:
+                if e.response.status_code == 401:
+                    # HTTPError: 401 Client Error: Unauthorized for url: https://i.instagram.com/api/v1/users....
+                    raise ClientUnauthorizedError(e, response=e.response)
+                elif e.response.status_code == 403:
+                    raise ClientForbiddenError(e, response=e.response)
+                elif e.response.status_code == 400:
+                    raise ClientBadRequestError(e, response=e.response)
+                elif e.response.status_code == 429:
+                    raise ClientThrottledError(e, response=e.response)
+                elif e.response.status_code == 404:
+                    raise ClientNotFoundError(e, response=e.response)
+                raise ClientError(e, response=e.response)
 
-        except requests.ConnectionError as e:
-            raise ClientConnectionError("{} {}".format(e.__class__.__name__, str(e)))
+        except Exception as e:
+            # Check if it's httpcloak ConnectionError
+            if hasattr(e, "__class__") and "ConnectionError" in e.__class__.__name__:
+                raise ClientConnectionError(
+                    "{} {}".format(e.__class__.__name__, str(e))
+                )
+            # Re-raise if not httpcloak exception
+            if not hasattr(e, "response"):
+                raise
         finally:
             self.last_response_ts = time.time()
 
@@ -370,8 +350,10 @@ class PublicRequestMixin:
         path = Path(path)
         try:
             with open(path, "wb") as f:
-                response.raw.decode_content = True
-                shutil.copyfileobj(response.raw, f)
+                # httpcloak streams content directly
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
             self._raise_for_incomplete_download(
                 path.stat().st_size,
                 self._expected_content_length(response),
@@ -479,7 +461,8 @@ class PublicRequestMixin:
                 "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.0.0 Safari/537.36"
             ),
         }
-        csrftoken = self.public.cookies.get("csrftoken")
+        c = self.public.get_cookie("csrftoken")
+        csrftoken = c.value if c else None
         if csrftoken:
             merged_headers["X-CSRFToken"] = csrftoken
         if headers:

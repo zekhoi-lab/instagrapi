@@ -496,7 +496,6 @@ class MediaMixin:
         if parts[:2] == ["share", "p"] and len(parts) >= 3:
             response = self.public.get(
                 url,
-                proxies=self.public.proxies,
                 timeout=self.request_timeout,
                 allow_redirects=False,
             )

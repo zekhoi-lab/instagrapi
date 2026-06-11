@@ -128,7 +128,6 @@ class UserMixin:
         self.inject_sessionid_to_public()
         response = self.public.get(
             self.PUBLIC_API_URL,
-            proxies=self.public.proxies,
             timeout=self.request_timeout,
         )
         html = response.text

@@ -335,7 +335,7 @@ class PrivateGraphQLRequestMixin:
         url = f"https://{domain or config.API_DOMAIN}/graphql/query"
         try:
             self.private_requests_count += 1
-            response = self.private.post(url, data=data, proxies=self.private.proxies)
+            response = self.private.post(url, data=data)
             self.request_log(response)
             self.last_response = response
             response.raise_for_status()
@@ -398,7 +398,7 @@ class PrivateGraphQLRequestMixin:
         response = None
         try:
             self.private_requests_count += 1
-            response = self.private.post(url, data=data, headers=merged, proxies=self.private.proxies)
+            response = self.private.post(url, data=data, headers=merged)
             self.request_log(response)
             self.last_response = response
             response.raise_for_status()
@@ -462,7 +462,6 @@ class PrivateGraphQLRequestMixin:
             PRIVATE_GRAPHQL_QUERY_URL,
             data=data,
             headers=merged,
-            proxies=self.private.proxies,
         )
         self.last_response = response
         try:

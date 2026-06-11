@@ -51,7 +51,7 @@ keywords = [
     "instagram-note",
 ]
 dependencies = [
-    "requests==2.34.2",
+    "httpcloak>=1.0.0",
     "PySocks==1.7.1",
     "pydantic==2.12.5; sys_platform == 'android'",
     "pydantic>=2.12.5,<2.14; sys_platform != 'android'",

@@ -14,8 +14,6 @@ try:
 except ImportError:
     raise Exception("You don't have PIL installed. Please install PIL or Pillow>=8.1.1")
 
-import requests
-
 from instagrapi.utils.video import MOVIEPY_2_FFMPEG_MESSAGE
 
 VIDEO_EXTRA_MESSAGE = f"prepare_video() requires MoviePy 2.2.1 and ffmpeg. {MOVIEPY_2_FFMPEG_MESSAGE}"
@@ -112,7 +110,11 @@ def prepare_image(img, max_size=(1080, 1350), aspect_ratios=(4.0 / 5.0, 90.0 / 4
     """
     min_size = kwargs.pop("min_size", (320, 167))
     if is_remote(img):
-        res = requests.get(img, timeout=5)
+        # Use httpcloak for external downloads
+        import httpcloak
+
+        session = httpcloak.Session(preset="chrome-143", tls_only=True)
+        res = session.get(img, timeout=5)
         im = Image.open(io.BytesIO(res.content))
     else:
         im = Image.open(img)
@@ -199,7 +201,11 @@ def prepare_video(
 
     if is_remote(vid):
         # Download remote file
-        res = requests.get(vid, timeout=5)
+        import httpcloak
+
+        session = httpcloak.Session(preset="chrome-143", tls_only=True)
+        res = session.get(vid, timeout=5)
+        
         temp_video_file.write(res.content)
         video_src_filename = temp_video_file.name
     else:

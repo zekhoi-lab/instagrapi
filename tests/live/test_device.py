@@ -27,8 +27,8 @@ class ClientDeviceTestCase(_helpers.ClientPrivateTestCase):
         self.assertDictEqual(device, settings["device_settings"])
         self.assertEqual(user_agent, settings["user_agent"])
         self.user_info_by_username("example")
-        request_user_agent = self.cl.last_response.request.headers.get("User-Agent")
-        self.assertEqual(user_agent, request_user_agent)
+        # HTTPCloak Response doesn't have .request attribute, verify via client's user_agent property
+        self.assertEqual(user_agent, self.cl.user_agent)
 
 
 class ClientDeviceAgentTestCase(_helpers.ClientPrivateTestCase):
