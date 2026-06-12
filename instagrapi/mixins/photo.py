@@ -92,14 +92,11 @@ class DownloadPhotoMixin:
         fname = urlparse(url).path.rsplit("/", 1)[1]
         filename = "%s.%s" % (filename, fname.rsplit(".", 1)[1]) if filename else fname
         path = Path(folder) / filename
-        # Use existing private session for downloads
-        response = self.private.get(url, stream=True, timeout=self.request_timeout)
+        response = requests.get(url, stream=True, timeout=self.request_timeout)
         response.raise_for_status()
         with open(path, "wb") as f:
-            # httpcloak streams content directly
-            for chunk in response.iter_content(chunk_size=8192):
-                if chunk:
-                    f.write(chunk)
+            response.raw.decode_content = True
+            shutil.copyfileobj(response.raw, f)
         return path.resolve()
 
     def photo_download_by_url_origin(self, url: str) -> bytes:
@@ -116,9 +113,9 @@ class DownloadPhotoMixin:
         bytes
         """
         url = str(url)
-        # Use existing private session
-        response = self.private.get(url, timeout=self.request_timeout)
+        response = requests.get(url, stream=True, timeout=self.request_timeout)
         response.raise_for_status()
+        response.raw.decode_content = True
         return response.content
 
 
@@ -698,7 +695,11 @@ class UploadPhotoMixin:
                         "color": poll.color,
                         "question": poll.question,
                         "tallies": [
-                            {"count": 0, "font_size": 39.0, "text": o}
+                            {
+                                "count": 0,
+                                "font_size": 39.0,
+                                "text": o
+                            }
                             for o in poll.options
                         ],
                         **poll_extra,
